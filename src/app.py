@@ -1,253 +1,51 @@
-from flask import Flask, render_template, request, redirect, url_for, flash
-from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
-from werkzeug.security import generate_password_hash, check_password_hash
-import os
+from flask import Flask, render_template, request, redirect
+
+from models import db, Tarefa
 
 
 app = Flask(__name__)
 
 
-app.config["SECRET_KEY"] = "sistema_tarefas_secret"
-
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///tarefas.db"
+# Configuração do banco
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///database.db"
 
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 
-db = SQLAlchemy(app)
+# Inicializa banco
+db.init_app(app)
 
 
 
-login_manager = LoginManager()
-
-login_manager.init_app(app)
-
-login_manager.login_view = "login"
-
-
-
-
-# =====================
-# MODELOS
-# =====================
-
-
-class Usuario(db.Model, UserMixin):
-
-    id = db.Column(db.Integer, primary_key=True)
-
-    nome = db.Column(db.String(100))
-
-    email = db.Column(db.String(100), unique=True)
-
-    senha = db.Column(db.String(200))
-
-
-
-class Tarefa(db.Model):
-
-    id = db.Column(db.Integer, primary_key=True)
-
-    titulo = db.Column(db.String(100))
-
-    descricao = db.Column(db.String(300))
-
-    concluida = db.Column(db.Boolean, default=False)
-
-    usuario_id = db.Column(db.Integer)
-
-
-
-@login_manager.user_loader
-def carregar_usuario(id):
-
-    return db.session.get(Usuario, int(id))
-
-
-
-
-
-# =====================
-# LOGIN
-# =====================
-
-
-@app.route("/login", methods=["GET","POST"])
-def login():
-
-
-    if request.method=="POST":
-
-
-        email=request.form["email"]
-
-        senha=request.form["senha"]
-
-
-        usuario=Usuario.query.filter_by(email=email).first()
-
-
-
-        if usuario and check_password_hash(usuario.senha, senha):
-
-            login_user(usuario)
-
-            return redirect(url_for("dashboard"))
-
-
-
-        flash("Login inválido")
-
-
-    return render_template("login.html")
-
-
-
-
-
-@app.route("/cadastro", methods=["GET","POST"])
-def cadastro():
-
-
-    if request.method=="POST":
-
-
-        nome=request.form["nome"]
-
-        email=request.form["email"]
-
-        senha=request.form["senha"]
-
-
-
-        usuario=Usuario(
-
-            nome=nome,
-
-            email=email,
-
-            senha=generate_password_hash(senha)
-
-        )
-
-
-        db.session.add(usuario)
-
-        db.session.commit()
-
-
-
-        return redirect("/login")
-
-
-
-    return render_template("cadastro.html")
-
-
-
-
-
-
-
-@app.route("/logout")
-@login_required
-def logout():
-
-    logout_user()
-
-    return redirect("/login")
-
-
-
-
-
-# =====================
-# DASHBOARD
-# =====================
-
-
+# Página inicial
 @app.route("/")
-@login_required
-def dashboard():
+def index():
 
-
-    tarefas=Tarefa.query.filter_by(usuario_id=current_user.id).all()
-
-
-    total=len(tarefas)
-
-
-    concluidas=len(
-        [t for t in tarefas if t.concluida]
-    )
-
-
-    pendentes=total-concluidas
-
-
+    tarefas = Tarefa.query.all()
 
     return render_template(
-
-        "dashboard.html",
-
-        tarefas=tarefas,
-
-        total=total,
-
-        concluidas=concluidas,
-
-        pendentes=pendentes
-
+        "index.html",
+        tarefas=tarefas
     )
 
 
 
-
-
-# =====================
-# TAREFAS
-# =====================
-
-
-@app.route("/adicionar",methods=["POST"])
-@login_required
+# Adicionar tarefa
+@app.route("/adicionar", methods=["POST"])
 def adicionar():
 
+    titulo = request.form["titulo"]
 
-    tarefa=Tarefa(
+    descricao = request.form["descricao"]
 
-        titulo=request.form["titulo"],
 
-        descricao=request.form["descricao"],
-
-        usuario_id=current_user.id
-
+    nova_tarefa = Tarefa(
+        titulo=titulo,
+        descricao=descricao
     )
 
 
-    db.session.add(tarefa)
-
-    db.session.commit()
-
-
-
-    return redirect("/")
-
-
-
-
-
-@app.route("/concluir/<int:id>")
-@login_required
-def concluir(id):
-
-
-    tarefa=db.session.get(Tarefa,id)
-
-
-    tarefa.concluida=True
-
+    db.session.add(nova_tarefa)
 
     db.session.commit()
 
@@ -256,18 +54,28 @@ def concluir(id):
 
 
 
-
-
+# Excluir tarefa
 @app.route("/excluir/<int:id>")
-@login_required
 def excluir(id):
 
-
-    tarefa=db.session.get(Tarefa,id)
-
+    tarefa = Tarefa.query.get(id)
 
     db.session.delete(tarefa)
 
+    db.session.commit()
+
+
+    return redirect("/")
+
+
+
+# Marcar como concluída
+@app.route("/concluir/<int:id>")
+def concluir(id):
+
+    tarefa = Tarefa.query.get(id)
+
+    tarefa.concluida = True
 
     db.session.commit()
 
@@ -276,29 +84,13 @@ def excluir(id):
 
 
 
+# Criar banco
+with app.app_context():
+
+    db.create_all()
 
 
 
-@app.route("/sobre")
-def sobre():
-
-    return render_template("sobre.html")
-
-
-
-
-
-
-
-if __name__=="__main__":
-
-
-    with app.app_context():
-
-        db.create_all()
-
-
-    print("Sistema de Gerenciamento de Tarefas")
-
+if __name__ == "__main__":
 
     app.run(debug=True)

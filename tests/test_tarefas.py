@@ -1,9 +1,10 @@
-from app import app
+from src.app import app
 
 
-def test_tarefas():
+def test_dashboard():
+
     cliente = app.test_client()
 
-    resposta = cliente.get("/tarefas")
+    resposta = cliente.get("/login")
 
     assert resposta.status_code == 200
